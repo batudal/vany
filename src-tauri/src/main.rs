@@ -6,10 +6,10 @@
 use secp256k1::Secp256k1;
 use std::fmt::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-// use std::sync::mpsc;
-// use std::sync::mpsc::Sender;
+use std::sync::mpsc;
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
-// use std::thread;
+use std::thread;
 use tiny_keccak::Hasher;
 use tiny_keccak::Keccak;
 
@@ -22,10 +22,7 @@ fn main() {
 
 #[tauri::command]
 fn return_prefix(input: &str) -> (String, String) {
-    let found = Arc::new(AtomicBool::new(false));
-    let wallet = find_address_starting_with(input, found);
-
-    (wallet.public_key, wallet.private_key)
+    run(input)
 }
 
 pub struct Wallet {
@@ -67,27 +64,27 @@ pub fn generate_key_address() -> (String, String) {
     (private_key_string, address_string)
 }
 
-pub fn find_address_starting_with(s: &str, found: Arc<AtomicBool>) -> Wallet {
-    let mut wallet = Wallet::new();
-    loop {
-        if found.load(Ordering::Relaxed) {
-            return Wallet::new();
-        }
+// pub fn find_address_starting_with(s: &str, tx: Sender<Wallet>, found: Arc<AtomicBool>) -> Wallet {
+//     let mut wallet = Wallet::new();
+//     loop {
+//         if found.load(Ordering::Relaxed) {
+//             return Wallet::new();
+//         }
 
-        let mut address;
+//         let mut address;
 
-        wallet = Wallet::new();
-        address = wallet.public_key.clone();
-        address = checksum(&address);
-        let score = score(&address, s);
-        if score == s.len() as i32 {
-            found.store(true, Ordering::Relaxed);
-            return wallet;
-        }
-    }
-}
+//         wallet = Wallet::new();
+//         address = wallet.public_key.clone();
+//         address = checksum(&address);
+//         let score = score(&address, s);
+//         if score == s.len() as i32 {
+//             found.store(true, Ordering::Relaxed);
+//             tx.send(wallet);
+//         }
+//     }
+// }
 
-pub fn score(a: &str, s: &str) -> i32 {
+pub fn score(a: &str, s: &String) -> i32 {
     let mut _s = 0;
     for (i, c) in s.chars().enumerate() {
         if a.chars().nth(i).unwrap() == c {
@@ -97,39 +94,44 @@ pub fn score(a: &str, s: &str) -> i32 {
     _s
 }
 
-// pub fn spawn_threads(
-//     s: &str,
-//     tx: &Sender<Wallet>,
-//     found: &Arc<AtomicBool>,
-//     processed: &Arc<AtomicU64>,
-// ) -> Vec<thread::JoinHandle<Result<(), mpsc::SendError<Wallet>>>> {
-//     let mut threads = vec![];
-//     let best_score = Arc::new(AtomicU64::new(0));
+pub fn run(s: &str) -> (String, String) {
+    let (tx, rx) = mpsc::channel();
+    let found = Arc::new(AtomicBool::new(false));
+    let mut threads = vec![];
+    for _ in 0..4 {
+        let _s = String::from(s);
+        let thread_tx = tx.clone();
+        let thread_found = found.clone();
+        threads.push(thread::spawn(move || {
+            let mut wallet = Wallet::new();
+            loop {
+                if thread_found.load(Ordering::Relaxed) {
+                    return Wallet::new();
+                }
 
-//     for _ in 0..4 {
-//         let thread_tx = tx.clone();
-//         let found_clone = found.clone();
-//         let processed_clone = processed.clone();
-//         let best_score_clone = best_score.clone();
+                let mut address;
 
-//         threads.push(thread::spawn(move || {
-//             thread_tx.send(find_address_starting_with(s, found_clone))
-//         }))
-//     }
+                wallet = Wallet::new();
+                address = wallet.public_key.clone();
+                address = checksum(&address);
+                let score = score(&address, &_s);
+                print!("Score: {}", score);
+                if score == _s.len() as i32 {
+                    print!("Found {}", wallet.public_key);
+                    thread_found.store(true, Ordering::Relaxed);
+                    thread_tx.send(wallet).expect("Err");
+                }
+            }
+        }))
+    }
 
-//     threads
-// }
+    for t in threads {
+        _ = t.join();
+    }
 
-// pub fn run(s: &str) {
-//     let (tx, rx) = mpsc::channel();
-//     let found = Arc::new(AtomicBool::new(false));
-//     let processed = Arc::new(AtomicU64::new(0));
-//     let threads = spawn_threads(s, &tx, &found, &processed);
-
-//     for t in threads {
-//         _ = t.join();
-//     }
-// }
+    let wallet = rx.recv().unwrap();
+    (wallet.public_key, wallet.private_key)
+}
 
 pub fn checksum(address: &str) -> String {
     let address = address.to_lowercase();
