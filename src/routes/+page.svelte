@@ -6,8 +6,7 @@
 	let options = ['Prefix only', 'Suffix only', 'Prefix + suffix'];
 	let prefix = '';
 	let message = '';
-
-	$: console.log('Prefix:', prefix);
+	let threads = 0;
 
 	const choose_method = (method_name: string) => {
 		if (!generating) chosen_method = method_name;
@@ -15,7 +14,7 @@
 
 	async function greet() {
 		generating = true;
-		message = await invoke('return_prefix', { input: prefix });
+		message = await invoke('return_prefix', { input: prefix, trs: threads });
 		generating = false;
 	}
 </script>
@@ -36,6 +35,7 @@
 		<input type="text" placeholder="Enter prefix" />
 		<input type="text" placeholder="Enter suffix" />
 	{/if}
+	<input type="number" placeholder="Enter threads" bind:value={threads} />
 	{#if generating}
 		<button class="outline" on:click={() => (generating = false)}>Stop generation</button>
 		<div><progress /></div>

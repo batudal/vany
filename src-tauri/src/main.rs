@@ -21,8 +21,8 @@ fn main() {
 }
 
 #[tauri::command]
-fn return_prefix(input: &str) -> (String, String) {
-    run(input)
+fn return_prefix(input: &str, trs: u32) -> (String, String) {
+    run(input, trs)
 }
 
 pub struct Wallet {
@@ -94,11 +94,11 @@ pub fn score(a: &str, s: &String) -> i32 {
     _s
 }
 
-pub fn run(s: &str) -> (String, String) {
+pub fn run(s: &str, trs: u32) -> (String, String) {
     let (tx, rx) = mpsc::channel();
     let found = Arc::new(AtomicBool::new(false));
     let mut threads = vec![];
-    for _ in 0..4 {
+    for _ in 0..trs {
         let _s = String::from(s);
         let thread_tx = tx.clone();
         let thread_found = found.clone();
@@ -115,9 +115,7 @@ pub fn run(s: &str) -> (String, String) {
                 address = wallet.public_key.clone();
                 address = checksum(&address);
                 let score = score(&address, &_s);
-                print!("Score: {}", score);
                 if score == _s.len() as i32 {
-                    print!("Found {}", wallet.public_key);
                     thread_found.store(true, Ordering::Relaxed);
                     thread_tx.send(wallet).expect("Err");
                 }
